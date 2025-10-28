@@ -7,22 +7,20 @@ from mathutils import Vector
 MODEL_PATH = "/home/frank/data/gitlab/blender_pro/data/QR0001_rotate.obj"
 OUTPUT_DIR = "/home/frank/data/gitlab/blender_pro/output"
 N_VIEWS = 12
-CAMERA_DISTANCE = 0.5  # ✅ 相机距离模型中心（米为单位）
+CAMERA_DISTANCE = 0.5  # 相机距离模型中心（米为单位）
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# 清空场景
+# === 清空场景 ===
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-# 导入模型
+# === 导入模型 ===
 bpy.ops.import_scene.obj(filepath=MODEL_PATH)
-
-
 
 # === 把模型从毫米缩放为米 ===
 for obj in bpy.context.selected_objects:
     if obj.type == 'MESH':
-        obj.scale = (0.001, 0.001, 0.001)  # 缩小 1000 倍
+        obj.scale = (0.001, 0.001, 0.001)
 bpy.ops.object.transform_apply(scale=True)
 
 # 选中所有物体
@@ -42,9 +40,6 @@ center = (min_corner + max_corner) / 2.0
 size = max_corner - min_corner
 max_dim = max(size)
 
-# === 添加光照 ===
-bpy.ops.object.light_add(type='SUN', radius=1.0, location=(2, 2, 2))
-
 # === 添加相机 ===
 bpy.ops.object.camera_add(location=(0, -CAMERA_DISTANCE, 0))
 camera = bpy.context.object
@@ -53,6 +48,28 @@ bpy.context.scene.camera = camera
 # 相机指向模型中心
 direction = center - camera.location
 camera.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+
+# === 添加光照（沿相机方向） ===
+bpy.ops.object.light_add(type='SUN')
+light = bpy.context.object
+light.data.energy = 4.0
+
+# 光照位置与相机一致，沿相机方向偏移一点
+offset = 0.1
+light.location = camera.matrix_world.translation - camera.matrix_world.to_quaternion() @ Vector((0, 0, offset))
+light.rotation_euler = camera.rotation_euler
+
+# === 环境光 ===
+if bpy.context.scene.world is None:
+    bpy.context.scene.world = bpy.data.worlds.new("World")
+bpy.context.scene.world.use_nodes = True
+bg = bpy.context.scene.world.node_tree.nodes["Background"]
+bg.inputs[0].default_value = (1, 1, 1, 1)  # 白色环境光
+bg.inputs[1].default_value = 0.1           # 提高环境亮度
+
+# === 曝光调整 ===
+bpy.context.scene.view_settings.exposure = 1.0
+bpy.context.scene.view_settings.gamma = 1.0
 
 # === 渲染循环 ===
 for i in range(N_VIEWS):
@@ -65,7 +82,11 @@ for i in range(N_VIEWS):
     direction = center - camera.location
     camera.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-    # 保存图像
+    # === 光照更新 ===
+    light.location = camera.matrix_world.translation - camera.matrix_world.to_quaternion() @ Vector((0, 0, offset))
+    light.rotation_euler = camera.rotation_euler
+
+    # === 渲染输出 ===
     bpy.context.scene.render.image_settings.file_format = 'PNG'
     bpy.context.scene.render.filepath = os.path.join(OUTPUT_DIR, f"view_{i:03d}.png")
     bpy.ops.render.render(write_still=True)
